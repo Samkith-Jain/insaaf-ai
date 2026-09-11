@@ -18,6 +18,7 @@ from data_pipeline.clean import clean_text
 from structuring.segment import segment
 from structuring.db import get_conn, insert_judgment, fetch_all_judgments
 from retrieval.hybrid import HybridRetriever
+from prompt_correction.correct import correct_prompt
 
 RAW_DIRS = ["data/raw", "data/ncdrc_judgments"]
 SUPPORTED_EXT = {".pdf", ".html", ".htm", ".txt"}
@@ -51,14 +52,18 @@ def ingest_all(conn):
         print(f"  -> stored as judgment_id={judgment_id}\n")
 
 
-def run_query(conn, query: str, top_k: int = 5):
+def run_query(conn, raw_query: str, top_k: int = 5):
+    correction = correct_prompt(raw_query)
+    print(f"\n=== Stage 0: Prompt Correction ===")
+    print(correction.summary())
+
     documents = fetch_all_judgments(conn)
     if len(documents) < 2:
         print("Need at least 2 ingested documents to build a retrieval index.")
         return
     retriever = HybridRetriever(documents)
-    results = retriever.search(query, top_k=top_k)
-    print(f"\n=== Hybrid retrieval results for: {query!r} ===")
+    results = retriever.search(correction.corrected_query, top_k=top_k)
+    print(f"\n=== Stage 3: Hybrid retrieval results ===")
     for r in results:
         print(f"[{r['hybrid_score']}] (bm25={r['bm25_score']} dense={r['dense_score']}) "
               f"{r['case_number']} ({r['forum']})")
@@ -67,7 +72,7 @@ def run_query(conn, query: str, top_k: int = 5):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--query", default="refund for delayed possession of flat by builder")
+    parser.add_argument("--query", default="flat posession delay refund")
     parser.add_argument("--top_k", type=int, default=5)
     args = parser.parse_args()
 
