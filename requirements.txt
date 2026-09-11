@@ -1,0 +1,14 @@
+fastapi
+uvicorn
+pdfplumber
+pytesseract
+pdf2image
+sentence-transformers
+rank-bm25
+qdrant-client
+spacy
+langchain
+langgraph
+sqlalchemy
+pydantic
+python-multipart
