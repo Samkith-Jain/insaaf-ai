@@ -14,7 +14,36 @@ Agentic RAG-powered legal judgment prediction system for Indian consumer dispute
 
 ## Status
 Zeroth review: design + literature review complete.
-Current phase: implementation in progress.
+Implemented so far: **stages 1-3** — extraction, cleaning, structuring
+(citation NER), SQLite legal DB, hybrid (BM25 + dense) retrieval. Verified
+end-to-end against 4 real judgment files (3 NCDRC, 1 State Commission).
+
+Stages 4-8 (multi-agent reasoning, CiteVerify, IRAC explanation, API/frontend)
+not yet implemented.
+
+### Note on offline substitutions
+This was built in a network-isolated dev environment, so a few components
+use dependency-free / offline stand-ins with the same interface as the
+production target, swap-in-ready once network access is available:
+- **Dense retrieval**: TF-IDF + Truncated SVD (scikit-learn) in place of
+  Sentence Transformers + Qdrant — same cosine-similarity ranking interface.
+- **NER**: regex-based statute/precedent citation extraction in place of
+  spaCy — legal citations follow tight, predictable patterns, so this is a
+  reasonable baseline ahead of swapping in a trained NER model.
+- **BM25**: implemented from scratch in place of the `rank_bm25` package.
+
+## Setup & run
+```bash
+python3 -m venv venv
+source venv/bin/activate   # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+
+# Drop judgment PDFs/HTML/txt into data/raw/ or data/ncdrc_judgments/, then:
+python scripts/run_pipeline.py --query "refund for delayed possession of flat by builder"
+```
+This ingests every file in `data/raw/` and `data/ncdrc_judgments/`, extracts
+and structures each judgment into `data_pipeline/legal.db`, builds a hybrid
+BM25 + dense index, and prints ranked retrieval results for the query.
 
 ## Structure
 - `prompt_correction/` — input correction module
