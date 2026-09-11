@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Insaaf AI</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <h1>Insaaf AI</h1>
+    <p class="tagline">Agentic RAG-powered legal judgment prediction — Indian consumer dispute adjudication</p>
+  </header>
+
+  <main>
+    <section class="query-panel">
+      <label for="query-input">Case query</label>
+      <textarea id="query-input" rows="3" placeholder="e.g. flat posession delay refund"></textarea>
+      <button id="submit-btn">Run pipeline</button>
+    </section>
+
+    <section id="correction-panel" class="panel hidden">
+      <h2>Stage 0 — Prompt Correction</h2>
+      <div class="row"><span class="label">Original</span><span id="orig-query"></span></div>
+      <div class="row"><span class="label">Corrected</span><span id="corrected-query" class="highlight"></span></div>
+      <div id="spelling-fixes"></div>
+      <div id="reformulation-notes"></div>
+    </section>
+
+    <section id="results-panel" class="panel hidden">
+      <h2>Stage 3 — Hybrid Retrieval Results</h2>
+      <div id="results-list"></div>
+    </section>
+
+    <section id="judgments-panel" class="panel">
+      <h2>Structured Legal Database</h2>
+      <div id="judgments-list">Loading...</div>
+    </section>
+
+    <section id="detail-panel" class="panel hidden">
+      <h2>Judgment Detail</h2>
+      <div id="detail-content"></div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
