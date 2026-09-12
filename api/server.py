@@ -21,8 +21,11 @@ from urllib.parse import urlparse, parse_qs
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from structuring.db import get_conn, fetch_all_judgments
+from structuring.segment import StructuredJudgment
 from retrieval.hybrid import HybridRetriever
 from prompt_correction.correct import correct_prompt
+from verification.citeverify import verify_all
+from explanation.irac import generate_irac
 
 DB_PATH = "data_pipeline/legal.db"
 _retriever = None  # built lazily / rebuilt on demand
@@ -68,6 +71,51 @@ class Handler(BaseHTTPRequestHandler):
                 for d in docs
             ]
             self._send_json({"count": len(summary), "judgments": summary})
+            return
+
+        if parsed.path.startswith("/api/judgments/") and parsed.path.endswith("/irac"):
+            judgment_id = parsed.path.split("/")[-2]
+            row = conn.execute(
+                "SELECT case_number, full_text FROM judgments WHERE judgment_id = ?", (judgment_id,)
+            ).fetchone()
+            if not row:
+                self._send_json({"error": "not found"}, 404)
+                return
+            statutes = conn.execute(
+                "SELECT section, act FROM statute_citations WHERE judgment_id = ?", (judgment_id,)
+            ).fetchall()
+            precedents = conn.execute(
+                "SELECT case_name, year, reporter_citation FROM precedent_citations WHERE judgment_id = ?",
+                (judgment_id,),
+            ).fetchall()
+
+            sj = StructuredJudgment(
+                case_number=row[0],
+                full_text=row[1],
+                body_text=row[1],
+                statute_citations=[{"section": s[0], "act": s[1]} for s in statutes],
+                precedent_citations=[{"case_name": p[0], "year": p[1], "reporter_citation": p[2]} for p in precedents],
+            )
+            verdicts = verify_all(sj, conn)
+            irac = generate_irac(sj, int(judgment_id), verdicts)
+            self._send_json({
+                "judgment_id": irac.judgment_id,
+                "case_number": irac.case_number,
+                "issue": irac.issue,
+                "rule": irac.rule,
+                "application": irac.application,
+                "conclusion": irac.conclusion,
+                "verified_citation_count": irac.verified_citation_count,
+                "unverified_citation_count": irac.unverified_citation_count,
+                "citation_verdicts": [
+                    {
+                        "type": v.citation_type, "citation": v.citation_text,
+                        "verified": v.verified, "confidence": v.confidence,
+                        "matched_against": v.matched_against, "reason": v.reason,
+                    }
+                    for v in irac.citation_verdicts
+                ],
+            })
             return
 
         if parsed.path.startswith("/api/judgments/"):

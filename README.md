@@ -14,12 +14,17 @@ Agentic RAG-powered legal judgment prediction system for Indian consumer dispute
 
 ## Status
 Zeroth review: design + literature review complete.
-Implemented so far: **stages 1-3** — extraction, cleaning, structuring
-(citation NER), SQLite legal DB, hybrid (BM25 + dense) retrieval. Verified
-end-to-end against 4 real judgment files (3 NCDRC, 1 State Commission).
+Implemented so far: **stages 0-4** (of 8 in the architecture diagram) —
+prompt correction, extraction, cleaning, structuring/citation NER, SQLite
+legal DB, hybrid (BM25 + dense) retrieval, CiteVerify (SPMA) citation
+verification, IRAC explanation generation, and a backend API + frontend UI.
+Verified end-to-end against 4 real judgment files (3 NCDRC, 1 State
+Commission).
 
-Stages 4-8 (multi-agent reasoning, CiteVerify, IRAC explanation, API/frontend)
-not yet implemented.
+Not yet implemented: the multi-agent reasoning pipeline (Fact Extraction,
+Statute Retrieval, Precedent Retrieval, Argument Analysis, Prediction
+agents) — currently the retrieval + verification + explanation stages run
+directly on a stored judgment rather than being orchestrated by agents.
 
 ### Note on offline substitutions
 This was built in a network-isolated dev environment, so a few components
@@ -29,8 +34,20 @@ production target, swap-in-ready once network access is available:
   Sentence Transformers + Qdrant — same cosine-similarity ranking interface.
 - **NER**: regex-based statute/precedent citation extraction in place of
   spaCy — legal citations follow tight, predictable patterns, so this is a
-  reasonable baseline ahead of swapping in a trained NER model.
+  reasonable baseline ahead of swapping in a trained NER model. Party-name
+  boundaries are imperfect (long/nested citations sometimes over- or
+  under-capture) — a known limitation of regex NER, not hidden.
 - **BM25**: implemented from scratch in place of the `rank_bm25` package.
+- **Backend**: stdlib `http.server` in place of FastAPI — same route/JSON
+  contract, mechanical port later.
+- **Frontend**: plain HTML/JS in place of React — no build step needed,
+  same component boundaries.
+- **IRAC generation**: rule-based extractive NLG (keyword + position
+  heuristics to locate Issue/Rule/Application/Conclusion sentences) in
+  place of LLM-based generation — a real, inspectable extraction, not a
+  placeholder, but terser than LLM-generated prose would be.
+- **CiteVerify precedent matching**: difflib `SequenceMatcher` textual
+  similarity in place of Sentence-Transformer semantic similarity.
 
 ## Setup & run
 ```bash

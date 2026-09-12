@@ -18,7 +18,8 @@ STATUTE_PATTERN = re.compile(
 
 # "X Vs. Y ... (YEAR) N SCC N" or "X Vs. Y [YEAR] ... (SC)" or "CC No. N of YEAR"
 CASE_CITATION_PATTERN = re.compile(
-    r"([A-Z][A-Za-z.&\s]{2,60}?)\s+(?:Vs\.?|v\.?|Versus)\s+([A-Z][A-Za-z.&\s]{2,60}?)"
+    r"([A-Z][A-Za-z.&\s]{2,70})\s+(?:Vs\.?|v\.?|Versus)\s+([A-Z][A-Za-z.&\s]{2,70}?)"
+    r"(?=\s*[\[\(]?\d{4}[\]\)]?|\s*,|\s*\.\s+[A-Z]|\n|$)"
     r"(?:\s*[\[\(](\d{4})[\]\)])?"
     r"(?:\s*[,]?\s*(\d+\s*SCC\s*\d+|[IVX]+\s*\(\d{4}\)\s*CPJ\s*\d+\s*\(SC\)))?",
 )

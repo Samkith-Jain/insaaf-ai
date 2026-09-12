@@ -19,6 +19,8 @@ from structuring.segment import segment
 from structuring.db import get_conn, insert_judgment, fetch_all_judgments
 from retrieval.hybrid import HybridRetriever
 from prompt_correction.correct import correct_prompt
+from verification.citeverify import verify_all
+from explanation.irac import generate_irac, render_irac
 
 RAW_DIRS = ["data/raw", "data/ncdrc_judgments"]
 SUPPORTED_EXT = {".pdf", ".html", ".htm", ".txt"}
@@ -68,6 +70,16 @@ def run_query(conn, raw_query: str, top_k: int = 5):
         print(f"[{r['hybrid_score']}] (bm25={r['bm25_score']} dense={r['dense_score']}) "
               f"{r['case_number']} ({r['forum']})")
         print(f"    {r['snippet']}\n")
+
+    # Stage 7+4b: CiteVerify + IRAC explanation on the top-ranked judgment
+    if results:
+        top_id = results[0]["judgment_id"]
+        top_doc = next(d for d in documents if d["judgment_id"] == top_id)
+        top_sj = segment(top_doc["full_text"])
+        verdicts = verify_all(top_sj, conn)
+        irac = generate_irac(top_sj, top_id, verdicts)
+        print(f"\n=== Stage 7: CiteVerify + Stage 4b: IRAC Explanation (top result) ===")
+        print(render_irac(irac))
 
 
 if __name__ == "__main__":

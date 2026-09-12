@@ -43,11 +43,40 @@ async function loadDetail(id) {
     <div class="row"><span class="label">Bench</span><span>${d.bench || "-"}</span></div>
     <div class="row"><span class="label">Statutes</span><span>${statutes}</span></div>
     <div class="row"><span class="label">Precedents</span><span>${precedents}</span></div>
+    <button id="irac-btn" data-id="${d.judgment_id}">Run CiteVerify + Generate IRAC</button>
+    <div id="irac-output"></div>
     <p class="label" style="margin-top:0.75rem">Full text</p>
     <pre>${(d.full_text || "").slice(0, 4000)}</pre>
   `;
   panel.classList.remove("hidden");
   panel.scrollIntoView({ behavior: "smooth" });
+  el("irac-btn").addEventListener("click", () => loadIrac(d.judgment_id));
+}
+
+async function loadIrac(id) {
+  const out = el("irac-output");
+  out.innerHTML = "<p>Running CiteVerify + IRAC generation...</p>";
+  const res = await fetch(`${API_BASE}/judgments/${id}/irac`);
+  const d = await res.json();
+
+  const verdictRows = (d.citation_verdicts || []).map(v => `
+    <div class="verdict-row ${v.verified ? "verified" : "unverified"}">
+      <span>${v.verified ? "✓" : "✗"} [${v.type}] ${v.citation || v.matched_against}</span>
+      <span class="conf">conf ${v.confidence}</span>
+    </div>
+  `).join("");
+
+  out.innerHTML = `
+    <div class="irac-block">
+      <h3>IRAC Explanation</h3>
+      <p><strong>Issue:</strong> ${d.issue}</p>
+      <p><strong>Rule:</strong> ${(d.rule || []).join("; ") || "(none extracted)"}</p>
+      <p><strong>Application:</strong> ${d.application}</p>
+      <p><strong>Conclusion:</strong> ${d.conclusion}</p>
+      <p><strong>Citation verification:</strong> ${d.verified_citation_count} verified, ${d.unverified_citation_count} unverified</p>
+      <div class="verdicts">${verdictRows}</div>
+    </div>
+  `;
 }
 
 async function runQuery() {

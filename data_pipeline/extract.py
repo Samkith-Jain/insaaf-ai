@@ -2,6 +2,7 @@
 Stage 1: Extraction.
 Pulls raw text out of PDF (digital or scanned) and HTML judgment sources.
 """
+import html
 import re
 import subprocess
 import tempfile
@@ -55,8 +56,7 @@ def extract_html_text(path: str) -> str:
     raw = re.sub(r"</(tr|table|p|div|br)>", "\n", raw, flags=re.IGNORECASE)
     raw = re.sub(r"<br\s*/?>", "\n", raw, flags=re.IGNORECASE)
     text = re.sub(r"<[^>]+>", " ", raw)
-    text = re.sub(r"&nbsp;", " ", text)
-    text = re.sub(r"&amp;", "&", text)
+    text = html.unescape(text)
     text = re.sub(r"[ \t]+", " ", text)
     text = re.sub(r"\n\s*\n+", "\n\n", text)
     return text.strip()
