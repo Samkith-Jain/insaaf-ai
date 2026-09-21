@@ -53,3 +53,34 @@ ACT_REGISTRY = {
     "consumer protection act, 1986": CPA_1986_SECTIONS,
     "consumer protection act 1986": CPA_1986_SECTIONS,
 }
+
+
+# --------------------------------------------------------------------------
+# Sub-clause registration (added with the Statute Retrieval Agent).
+#
+# The dictionaries above hold whole-section titles only, so a citation to a
+# definition sub-clause - s.2(11) deficiency, s.2(47) unfair trade practice,
+# the very refs Agent 1 emits as CPA hooks - could not be authenticated and
+# every one of them verified as UNVERIFIED. The provision corpus in
+# `statutes/cpa_corpus.py` carries those sub-clauses, so they are merged in
+# here to keep CiteVerify as the single verification gate rather than adding
+# a second, parallel registry.
+#
+# Merge only: an entry already written above is never overwritten, so the
+# hand-curated titles remain the authority where the two disagree.
+# --------------------------------------------------------------------------
+def _register_corpus_provisions() -> None:
+    from statutes.cpa_corpus import ALL_PROVISIONS, CPA_1986 as _A1986, CPA_2019 as _A2019
+
+    target = {_A2019: CPA_2019_SECTIONS, _A1986: CPA_1986_SECTIONS}
+    for provision in ALL_PROVISIONS:
+        # Chapter-level entries carry no citable section number of their own.
+        if not provision.get("numbering_verified", True):
+            continue
+        sections = target.get(provision["act"])
+        if sections is None:
+            continue
+        sections.setdefault(provision["section"], provision["title"])
+
+
+_register_corpus_provisions()

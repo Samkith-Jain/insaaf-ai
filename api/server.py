@@ -26,6 +26,11 @@ from retrieval.hybrid import HybridRetriever
 from prompt_correction.correct import correct_prompt
 from verification.citeverify import verify_all
 from explanation.irac import generate_irac
+from agents.fact_extraction import FactExtractionAgent
+from agents.precedent_retrieval import PrecedentRetrievalAgent
+from agents.prediction import PredictionAgent
+from agents.statute_retrieval import StatuteRetrievalAgent
+from agents.argument_analysis import ArgumentAnalysisAgent
 
 DB_PATH = "data_pipeline/legal.db"
 _retriever = None  # built lazily / rebuilt on demand
@@ -178,6 +183,181 @@ class Handler(BaseHTTPRequestHandler):
             })
             return
 
+        if parsed.path == "/api/facts":
+            # Agent 1: Fact Extraction. Body: {"case_text": "..."} or {"judgment_id": 1},
+            # optional "query" and "strip_outcome" (default true = leakage control).
+            case_text = payload.get("case_text", "")
+            if not case_text and payload.get("judgment_id") is not None:
+                row = get_conn(DB_PATH).execute(
+                    "SELECT full_text FROM judgments WHERE judgment_id = ?", (payload["judgment_id"],)
+                ).fetchone()
+                if not row:
+                    self._send_json({"error": "judgment not found"}, 404)
+                    return
+                case_text = row[0]
+            if not case_text.strip():
+                self._send_json({"error": "case_text or judgment_id is required"}, 400)
+                return
+            agent = FactExtractionAgent(strip_outcome=bool(payload.get("strip_outcome", True)))
+            sheet = agent.extract(case_text, payload.get("query", ""))
+            self._send_json(sheet.to_dict())
+            return
+
+        if parsed.path == "/api/arguments":
+            # Agent 4: Argument Analysis. Body: {"case_text": "..."} or {"judgment_id": 1},
+            # optional "query" and "with_precedents" (default true - Agent 3 supplies the
+            # precedential support; set false to build the map from statutes alone).
+            conn = get_conn(DB_PATH)
+            case_text = payload.get("case_text", "")
+            judgment_id = payload.get("judgment_id")
+            if not case_text and judgment_id is not None:
+                row = conn.execute(
+                    "SELECT full_text FROM judgments WHERE judgment_id = ?", (judgment_id,)
+                ).fetchone()
+                if not row:
+                    self._send_json({"error": "judgment not found"}, 404)
+                    return
+                case_text = row[0]
+            if not case_text.strip():
+                self._send_json({"error": "case_text or judgment_id is required"}, 400)
+                return
+
+            state = {
+                "case_text": case_text,
+                "query": payload.get("query", ""),
+                "judgment_id": judgment_id,
+            }
+            state = FactExtractionAgent().run(state)
+            state = StatuteRetrievalAgent(conn=conn).run(state)
+            if payload.get("with_precedents", True):
+                state = PrecedentRetrievalAgent(conn=conn).run(state)
+            state = ArgumentAnalysisAgent(
+                count_unverified=bool(payload.get("count_unverified", False))
+            ).run(state)
+            self._send_json({
+                "argument_map": state["argument_map"].to_dict(),
+                "argument_features": state["argument_features"],
+            })
+            return
+
+        if parsed.path == "/api/predict":
+            # Agent 5: Prediction. Body: {"case_text": "..."} or {"judgment_id": 1}, optional
+            # "query", "with_precedents" (default true - supplies the precedential prior),
+            # "abstain_threshold" (0.0 forces a prediction), "use_precedent_prior" and
+            # "count_unverified_prior" (ablations). Chains Agents 1 -> 2 -> 3 -> 4 -> 5.
+            conn = get_conn(DB_PATH)
+            case_text = payload.get("case_text", "")
+            judgment_id = payload.get("judgment_id")
+            if not case_text and judgment_id is not None:
+                row = conn.execute(
+                    "SELECT full_text FROM judgments WHERE judgment_id = ?", (judgment_id,)
+                ).fetchone()
+                if not row:
+                    self._send_json({"error": "judgment not found"}, 404)
+                    return
+                case_text = row[0]
+            if not case_text.strip():
+                self._send_json({"error": "case_text or judgment_id is required"}, 400)
+                return
+
+            state = {
+                "case_text": case_text,
+                "query": payload.get("query", ""),
+                "judgment_id": judgment_id,
+            }
+            state = FactExtractionAgent().run(state)
+            state = StatuteRetrievalAgent(conn=conn).run(state)
+            if payload.get("with_precedents", True):
+                state = PrecedentRetrievalAgent(conn=conn).run(state)
+            state = ArgumentAnalysisAgent().run(state)
+
+            kwargs = {
+                "use_precedent_prior": bool(payload.get("use_precedent_prior", True)),
+                "count_unverified_prior": bool(payload.get("count_unverified_prior", False)),
+            }
+            if payload.get("abstain_threshold") is not None:
+                kwargs["abstain_threshold"] = float(payload["abstain_threshold"])
+            state = PredictionAgent(**kwargs).run(state)
+
+            self._send_json({
+                "prediction": state["prediction"].to_dict(),
+                "for_explanation": state["prediction_summary"],
+            })
+            return
+
+        if parsed.path == "/api/statutes":
+            # Agent 2: Statute Retrieval. Body: {"case_text": "..."} or {"judgment_id": 1},
+            # optional "query", "top_k", "min_score", "both_acts", and "with_precedents"
+            # (chains Agent 3 on the same state, so the statutes feed precedent retrieval).
+            conn = get_conn(DB_PATH)
+            case_text = payload.get("case_text", "")
+            judgment_id = payload.get("judgment_id")
+            if not case_text and judgment_id is not None:
+                row = conn.execute(
+                    "SELECT full_text FROM judgments WHERE judgment_id = ?", (judgment_id,)
+                ).fetchone()
+                if not row:
+                    self._send_json({"error": "judgment not found"}, 404)
+                    return
+                case_text = row[0]
+            if not case_text.strip():
+                self._send_json({"error": "case_text or judgment_id is required"}, 400)
+                return
+
+            state = {
+                "case_text": case_text,
+                "query": payload.get("query", ""),
+                "judgment_id": judgment_id,
+            }
+            state = FactExtractionAgent().run(state)
+            state = StatuteRetrievalAgent(
+                conn=conn,
+                top_k=int(payload.get("top_k", 6)),
+                min_score=float(payload.get("min_score", 0.15)),
+                include_other_act=bool(payload.get("both_acts", False)),
+            ).run(state)
+
+            response = {"statutes": state["statute_bundle"].to_dict()}
+            if payload.get("with_precedents"):
+                state = PrecedentRetrievalAgent(conn=conn).run(state)
+                response["precedents"] = state["precedent_bundle"].to_dict()
+            self._send_json(response)
+            return
+
+        if parsed.path == "/api/precedents":
+            # Agent 3: Precedent Retrieval. Body: {"case_text": "..."} or {"judgment_id": 1},
+            # optional "query", "top_k", "min_score", and "exclude_self" (default true =
+            # leakage control: a stored judgment is never returned as its own precedent).
+            conn = get_conn(DB_PATH)
+            case_text = payload.get("case_text", "")
+            judgment_id = payload.get("judgment_id")
+            if not case_text and judgment_id is not None:
+                row = conn.execute(
+                    "SELECT full_text FROM judgments WHERE judgment_id = ?", (judgment_id,)
+                ).fetchone()
+                if not row:
+                    self._send_json({"error": "judgment not found"}, 404)
+                    return
+                case_text = row[0]
+            if not case_text.strip():
+                self._send_json({"error": "case_text or judgment_id is required"}, 400)
+                return
+
+            state = {
+                "case_text": case_text,
+                "query": payload.get("query", ""),
+                "judgment_id": judgment_id,
+            }
+            state = FactExtractionAgent().run(state)
+            state = PrecedentRetrievalAgent(
+                conn=conn,
+                top_k=int(payload.get("top_k", 5)),
+                min_score=float(payload.get("min_score", 0.0)),
+                exclude_self=bool(payload.get("exclude_self", True)),
+            ).run(state)
+            self._send_json(state["precedent_bundle"].to_dict())
+            return
+
         self._send_json({"error": "not found"}, 404)
 
     def log_message(self, fmt, *args):
@@ -187,7 +367,9 @@ class Handler(BaseHTTPRequestHandler):
 def run(port: int = 8000):
     server = ThreadingHTTPServer(("0.0.0.0", port), Handler)
     print(f"Insaaf AI API serving on http://localhost:{port}")
-    print("Routes: GET /api/judgments  GET /api/judgments/{id}  POST /api/query")
+    print("Routes: GET /api/judgments  GET /api/judgments/{id}  GET /api/judgments/{id}/irac")
+    print("        POST /api/query  POST /api/facts  POST /api/statutes")
+    print("        POST /api/precedents  POST /api/arguments  POST /api/predict")
     server.serve_forever()
 
 
